@@ -23,11 +23,11 @@ class CarClassifier():
         return utils.loadData(path)
 
 
-    def __init__(self, color_space='YCrCb', spatial_size=(16, 16),
+    def __init__(self, cspace='LUV', spatial_size=(16, 16),
                      hist_bins=32, orient=9,
                      pix_per_cell=8, cell_per_block=2, hog_channel='ALL',
                      spatial_feat=True, hist_feat=True, hog_feat=True, yrange=(400,680), window_size=64, debug=False):
-        self.color_space = color_space
+        self.color_space = cspace
         self.spatial_size = spatial_size
         self.hist_bins = hist_bins
         self.orient = orient
@@ -41,6 +41,7 @@ class CarClassifier():
         self.scaler = None
         self.yrange = yrange
         self.window_size=window_size
+        self.live_canvas = None
 
     def trainSVC(self, X, y, split=0.2, C=1, benchmark=False):
         print("Training linear SVC")
@@ -76,26 +77,31 @@ class CarClassifier():
         video_clip.write_videofile(output_video, audio=False)
 
     # Define a single function that can extract features using hog sub-sampling and make predictions
-    def findCars(self, img, windows_range, windows_steps):
-        draw_img = np.copy(img)
-
+    def findCars(self, img, windows_range, windows_steps, threshold=5 ,debug=False):
         ystart,ystop = self.yrange
         scale_range = []
-        for i in range(windows_steps):
+        wsize_range = []
+        for i in range(0,windows_steps):
             wsize = ((windows_range[1] - windows_range[0]) / windows_steps) * i + windows_range[0]
-            print(wsize)
             scale = wsize / self.window_size
             scale_range.append(scale)
+            wsize_range.append(int(wsize))
+
+
+        if debug:
+            print(wsize_range)
+            print(scale_range)
 
         img = self.normalizeImage(img)
         img_tosearch = img[ystart:ystop, :, :]
         ctrans_tosearch = utils.color_space(img_tosearch,self.color_space)
         bboxes = []
-        for scale in scale_range:
+        for scale, wsize in zip(scale_range,wsize_range):
             if scale != 1:
                 imshape = ctrans_tosearch.shape
-                ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1] / scale), np.int(imshape[0] / scale)))
-
+                scaled_w,scaled_h = int(np.ceil(imshape[1] / scale)), int(np.ceil(imshape[0] / scale))
+                ctrans_tosearch = cv2.resize(ctrans_tosearch, (scaled_w, scaled_h))
+            #if debug: utils.showImage(ctrans_tosearch)
             ch1 = ctrans_tosearch[:, :, 0]
             ch2 = ctrans_tosearch[:, :, 1]
             ch3 = ctrans_tosearch[:, :, 2]
@@ -105,26 +111,32 @@ class CarClassifier():
             nyblocks = (ch1.shape[0] // self.pix_per_cell) - self.cell_per_block + 1
             nfeat_per_block = self.orient * self.cell_per_block ** 2
 
-            # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
+            # orginal sampling rate
             window = self.window_size
             nblocks_per_window = (window // self.pix_per_cell) - self.cell_per_block + 1
-            cells_per_step = 2  # Instead of overlap, define how many cells to step
+            cells_per_step = 1  # 75% overlapping
             nxsteps = (nxblocks - nblocks_per_window) // cells_per_step
             nysteps = (nyblocks - nblocks_per_window) // cells_per_step
 
             # Compute individual channel HOG features for the entire image
-            hog1 = ft.get_hog_features(ch1, self.orient, self.pix_per_cell, self.cell_per_block, feature_vector=False)
-            hog2 = ft.get_hog_features(ch2, self.orient, self.pix_per_cell, self.cell_per_block, feature_vector=False)
-            hog3 = ft.get_hog_features(ch3, self.orient, self.pix_per_cell, self.cell_per_block, feature_vector=False)
+
+            if self.hog_feat:
+                hog1 = ft.get_hog_features(ch1, self.orient, self.pix_per_cell, self.cell_per_block, feature_vector=False)
+                hog2 = ft.get_hog_features(ch2, self.orient, self.pix_per_cell, self.cell_per_block, feature_vector=False)
+                hog3 = ft.get_hog_features(ch3, self.orient, self.pix_per_cell, self.cell_per_block, feature_vector=False)
+
             for xb in range(nxsteps):
                 for yb in range(nysteps):
                     ypos = yb * cells_per_step
                     xpos = xb * cells_per_step
+
+                    features = []
                     # Extract HOG for this patch
-                    hog_feat1 = hog1[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
-                    hog_feat2 = hog2[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
-                    hog_feat3 = hog3[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
-                    hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+                    if self.hog_feat:
+                        hog_feat1 = hog1[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                        hog_feat2 = hog2[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                        hog_feat3 = hog3[ypos:ypos + nblocks_per_window, xpos:xpos + nblocks_per_window].ravel()
+                        features.extend(np.hstack((hog_feat1, hog_feat2, hog_feat3)))
 
                     xleft = xpos * self.pix_per_cell
                     ytop = ypos * self.pix_per_cell
@@ -133,12 +145,15 @@ class CarClassifier():
                     subimg = cv2.resize(ctrans_tosearch[ytop:ytop + window, xleft:xleft + window], (64, 64))
 
                     # Get color features
-                    spatial_features = ft.bin_spatial(subimg, size=self.spatial_size)
-                    hist_features = ft.color_hist(subimg, nbins=self.hist_bins)
+                    if self.spatial_feat:
+                        features.extend(ft.bin_spatial(subimg, size=self.spatial_size))
+
+                    if self.hist_feat:
+                        features.extend(ft.color_hist(subimg, nbins=self.hist_bins))
 
                     # Scale features and make a prediction
-                    test_features = self.scaler.transform( np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))
-                    test_prediction = self.svc.predict(test_features)
+                    scaled_features = self.scaler.transform(features)
+                    test_prediction = self.svc.predict(scaled_features)
 
                     if test_prediction == 1:
                         xbox_left = np.int(xleft * scale)
@@ -149,16 +164,16 @@ class CarClassifier():
                         bbox = (top_left,bottom_right)
                         bboxes.append(bbox)
 
-        car_list = self.filterBoxses(img, bboxes)
+        car_list = self.filterBoxses(img, bboxes, threshold=threshold, debug=debug)
 
         return car_list
 
     def filterBoxses(self, img, bboxes, threshold=5, debug=False):
-        heatmap_img = self.heatmap(img,bboxes, threshold, debug=debug)
+        heatmap_img = self.heatmap(img, bboxes, threshold, debug=debug)
         final_bboxes = self.heatmapToBoxes(heatmap_img, debug=debug)
         return final_bboxes
 
-    def heatmap(self, img, bboxes, threshold=4, debug=False):
+    def heatmap(self, img, bboxes, threshold=5, debug=False):
         heatmap = np.zeros(img.shape[:2])
         for bbox in bboxes:
             # Add += 1 for all pixels inside each bbox

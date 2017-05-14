@@ -104,7 +104,7 @@ def normalizeImage(img):
 ## IMAGE LOAD
 
 def saveImage(path, img, cspace = None):
-    if color_space is not None:
+    if cspace is not None:
         img = cv2.cvtColor(img, cspace)
     cv2.imwrite(path,img)
     pass
@@ -124,6 +124,12 @@ def loadImages(path, cspace = cv2.COLOR_BGR2RGB):
 
 ## FS OPERATIONS
 
+def replaceExtension(path, ext):
+    parts = path.split('.')
+    parts[-1] = ext
+    return ".".join(parts)
+
+
 def filenameAppend(path, suffix):
     parts = path.split(".")
     ext = parts[-1]
@@ -132,7 +138,7 @@ def filenameAppend(path, suffix):
 
 def filename(path):
     parts = path.split('/')
-    if parts > 0:
+    if len(parts) > 0:
         return parts[-1]
     else:
         return path
@@ -158,10 +164,8 @@ def loadData(path):
     return value
 
 def saveData(path,data):
-    if os.path.exists(path):
-        os.remove(path)
-
-    print('saveData',path)
+    print('saveData path', path)
+    print('saveData type', type(data))
     ext = path.split('.')[-1]
     if ext == 'jpg':
         cv2.imwrite(path, data)
@@ -191,4 +195,5 @@ def standardDatetime():
 ## play sounds
 
 def play(path):
-    pygame.mixer.Sound(path).play()
+    sound = pygame.mixer.Sound(path)
+    sound.play()

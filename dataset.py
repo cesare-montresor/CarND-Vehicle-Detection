@@ -13,43 +13,76 @@ from moviepy.editor import VideoFileClip
 import csv
 
 csvname = 'labels.csv'
-datasetfile = 'dataset.p'
+datasetfile = 'dataset.npz'
 datasources_path = './datasources/'
 recordings_path = './recordings/'
 datasets_path = './datasets/'
 video_output_path = './videos/'
-default_batch_size = 32
 
-def recordingsToDataset_CrowdAI(name, size=(64, 64), reindex_only=False, force=False):
+def augmentNonVehicleDatasource(target_size, force=False):
+    src_nonvehicles_path = datasources_path + 'non-vehicles/*/*.png'
+    dst_nonvehicles_path = datasources_path + 'non-vehicles/augmented/'
+
+    aug_functions = [randomHue,randomBrightness,randomShadows]
+    utils.makedirs(dst_nonvehicles_path)
+    if len(glob.glob(dst_nonvehicles_path+'*.png')) > 0 and not force:
+        return 0
+
+    last_progress = 0
+    items_cnt = 0
+
+    src_paths = shuffle(glob.glob(src_nonvehicles_path))
+    aug_per_img = math.ceil(target_size / len(src_paths))
+    for img_path in src_paths:
+        filename = utils.filename(img_path)
+        img = utils.loadImage(img_path)
+        for i in range(aug_per_img):
+            action_num = np.random.randint(1, len(aug_functions))
+            action = aug_functions[action_num]
+            aug_img = action(img)
+
+            aug_img_path = dst_nonvehicles_path + utils.filenameAppend(filename,'_'+str(i))
+            utils.saveImage(aug_img_path,aug_img, cspace=cv2.COLOR_RGB2BGR)
+
+            items_cnt += 1
+            progress = int((items_cnt * 100) / target_size)
+            if progress > last_progress:
+                print('Augmenting non-vehicle datasource', progress, '%')
+                last_progress = progress
+
+        if items_cnt > target_size:
+            break
+
+
+
+
+def recordingsToDatasource_CrowdAI(name, size=(64, 64), force=False):
     filters = {
         5: 'Car'
     }
-    return recordingsToDataset(name, key_frame=4, key_topleft=(0, 1), key_bottomright=(2, 3), key_filter=filters, size=size, force=force, reindex_only=reindex_only)
+    return recordingsToDatasource(name, key_frame=4, key_topleft=(0, 1), key_bottomright=(2, 3), key_filter=filters, size=size, force=force)
 
-def recordingsToDataset_Autti(name, size=(64, 64), reindex_only=False, force=False):
+def recordingsToDatasource_Autti(name, size=(64, 64), force=False):
     filters = {
         6: 'car',
         5: '0'
     }
-    return recordingsToDataset(name, key_frame=0, key_topleft=(1,2),key_bottomright=(3,4), key_filter=filters, size=size, csvdelimiter=' ', force=force, reindex_only=reindex_only)
+    return recordingsToDatasource(name, key_frame=0, key_topleft=(1,2),key_bottomright=(3,4), key_filter=filters, size=size, csvdelimiter=' ', force=force)
 
 
-def recordingsToDataset(name, key_frame, key_topleft, key_bottomright, key_filter={}, size=(64,64), csvdelimiter=',', reindex_only=False, force=False):
+def recordingsToDatasource(name, key_frame, key_topleft, key_bottomright, key_filter={}, size=(64,64), csvdelimiter=',', force=False):
     src_basepath = recordings_path + name + '/'
-    dst_basepath = datasets_path + name + '/'
-    dst_basepath_img = dst_basepath + 'img/'
+    dst_basepath = datasources_path + 'vehicles/' + name + '/'
 
-    utils.makedirs(dst_basepath_img)
+    utils.makedirs(dst_basepath)
 
-    if os.path.exists(dst_basepath+datasetfile) and not force and not reindex_only:
+    if len(glob.glob(dst_basepath+'*.png')) > 0 and not force:
         return dst_basepath,0
 
     size_ratio = size[0]/size[1]
 
     csvpath = src_basepath + csvname
     lines = utils.loadCSV(csvpath,delimiter=csvdelimiter)
-
-    #get only cars with no occlusion (enough?)
 
     for k in key_filter:
         value = key_filter[k]
@@ -67,15 +100,15 @@ def recordingsToDataset(name, key_frame, key_topleft, key_bottomright, key_filte
 
     last_progress = 0
     frame_num = 0
-    paths = []
-    labels = []
+    items_cnt = 0
     for frame in byframe_list:
         bboxes = byframe_list[frame]
         img_path = src_basepath + frame
         img = utils.loadImage(img_path)
         for i, bbox in enumerate(bboxes):
             framename = utils.filenameAppend(frame, "_" + str(i))
-            framepath = dst_basepath_img + framename
+            framename = utils.replaceExtension(framename,'png')
+            framepath = dst_basepath + framename
 
             tl,br = bbox
             w,h = abs(tl[1]-br[1]), abs(tl[0]-br[0])
@@ -95,27 +128,21 @@ def recordingsToDataset(name, key_frame, key_topleft, key_bottomright, key_filte
             h_min = int((tl[1] + br[1]) / 2 - (new_h / 2))
             h_max = int((tl[1] + br[1]) / 2 + (new_h / 2))
 
-            if not reindex_only:
-                img_section = img[h_min:h_max,w_min:w_max,:]
-                img_section = cv2.resize(img_section,size, interpolation=cv2.INTER_CUBIC)
-                utils.saveImage(framepath, img_section, cspace=cv2.COLOR_BGR2RGB)
 
-            paths.append(framepath)
-            labels.append(1)
-
+            img_section = img[h_min:h_max,w_min:w_max,:]
+            img_section = cv2.resize(img_section,size, interpolation=cv2.INTER_CUBIC)
+            utils.saveImage(framepath, img_section, cspace=cv2.COLOR_BGR2RGB)
+            items_cnt +=1
             frame_num += 1
             progress = int((frame_num * 100) / cnt)
             if progress > last_progress:
-                print('Generating dataset', progress, '%')
+                print('Generating datasources for ', name, progress, '%')
                 last_progress = progress
-
-    dataset = {'path': paths, 'y': labels}
-    utils.saveData(dst_basepath + datasetfile, dataset)
+    return dst_basepath, items_cnt
 
 
 
-
-def datasourceToDataset(name=None, limit=None, reindex_only=False, force=False):
+def datasourceToDataset(name=None, reindex_only=False, force=False):
     if name is None: name = 'dataset_'+utils.standardDatetime()
     basepath = datasets_path + name + '/'
     basepath_img = basepath+ 'img/'
@@ -155,15 +182,13 @@ def datasourceToDataset(name=None, limit=None, reindex_only=False, force=False):
     dataset_cnt = len(paths)
     dataset = {'path': paths, 'y': labels}
 
-    utils.saveData(basepath + datasetfile, dataset)
+    saveDataset(name,dataset)
 
     return basepath, dataset_cnt
 
 def computeFeaturesForDataset(name, classifier, debug=False, force=False):
-    basepath = datasets_path + name + '/'
-    dataset_path = basepath + datasetfile
+    dataset = loadDataset(name)
 
-    dataset = loadData(dataset_path)
     for label in dataset:
         print(label)
 
@@ -174,36 +199,41 @@ def computeFeaturesForDataset(name, classifier, debug=False, force=False):
         scaler = StandardScaler().fit(features)
         scaled_features = scaler.transform(features)
         dataset['features'] = scaled_features
-        utils.saveData(basepath + datasetfile, dataset)
+        saveDataset(name, dataset)
 
-    return basepath, scaler
+    return scaler
+
+def saveDataset(name, data):
+    path = datasets_path + name + '/' + datasetfile
+    np.savez(path, **data)
 
 
 def loadDataset(name):
-    dataset = []
-
-    with open(datasets_path + name + '/' + datasetfile, 'rb') as picklefile:
-        dataset=pickle.load(picklefile)
-
+    dataset = None
+    path = datasets_path + name + '/' + datasetfile
+    with np.load(path) as npzfile:
+        dataset = {}
+        for key in npzfile.keys():
+            dataset[key] = npzfile[key].tolist()
     return dataset
 
-
-def loadData(path):
-    value=None
-    ext = path.split('.')[-1]
-    if ext == 'jpg':
-        value = cv2.imread(path)
-    elif ext == 'p':
-        with open(path, 'rb') as pfile:
-            value = pickle.load(pfile)
-    return value
+def loadDatasets(names):
+    dataset = None
+    for name in names:
+        dataset_part = loadDataset(name)
+        if dataset is None:
+            dataset = dataset_part
+        else:
+            for key in dataset_part:
+                dataset[key].extends(dataset_part[key])
+    return dataset
 
 # video parsing and extraction
 
 def processVideo(self, path, function, live=False, debug=False):
     if not live:
-        strdate = '_' + utils.standardDateFormat()
-        output_video = video_output_path + utils.filename_append(path, strdate)
+        strdate = '_' + utils.standardDatetime()
+        output_video = video_output_path + utils.filenameAppend(path, strdate)
         video = VideoFileClip(path)
         video_clip = video.fl_image(function)
     else:
@@ -229,15 +259,21 @@ def randomBrightness(img, limit=0.4):
     img_new = cv2.cvtColor(img_new,cv2.COLOR_HSV2RGB)
     return img_new
 
-def randomShift(img, steering, max_shift_x = 10, max_shift_y = 10, steering_strenght=1):
+def randomHue(img, limit=0.4):
+    img_new = cv2.cvtColor(img,cv2.COLOR_RGB2HSV)
+    img_new = np.array(img_new, dtype = np.float64)
+    img_new[:,:,2] = img_new[:,:,0] * (np.random.uniform(low=limit, high=2-limit))
+    img_new[:,:,2][img_new[:,:,0]>255] %= 255
+    img_new = np.array(img_new, dtype = np.uint8)
+    img_new = cv2.cvtColor(img_new,cv2.COLOR_HSV2RGB)
+    return img_new
+
+def randomRotation(img, max_rotation = 30):
     height, width, depth = img.shape
-    x_seed = np.random.uniform(-1,1)
-    deltaX = max_shift_x * x_seed
-    deltaY = max_shift_y * np.random.uniform(-1,1)
-    steering += x_seed * steering_strenght
-    trans = np.float32([[1, 0, deltaX], [0, 1, deltaY]])
-    img_new = cv2.warpAffine(img, trans, (width,height))
-    return img_new, steering
+    angle = int( max_rotation*np.random.uniform(-1,1) )
+    M = cv2.getRotationMatrix2D((width / 2, height / 2), angle, 1)
+    img_new = cv2.warpAffine(img, M, (width, height))
+    return img_new
 
 def randomShadows(img, max_shadows = 3, min_aplha=0.1, max_aplha=0.8, min_size=0.2, max_size=0.8 ):
     img_new = img.copy()
@@ -257,35 +293,10 @@ def randomShadows(img, max_shadows = 3, min_aplha=0.1, max_aplha=0.8, min_size=0
     return img_new
 
 
-def histogramEqualizationAndColorSpace(image):
-    ycrcb=cv2.cvtColor(image,cv2.COLOR_BGR2YCR_CB)
+def histogramEqualization(image):
+    ycrcb=cv2.cvtColor(image,cv2.COLOR_RGB2YCR_CB)
     channels=cv2.split(ycrcb)
     cv2.equalizeHist(channels[0],channels[0])
-    cv2.merge(channels,ycrcb)
-    return ycrcb
-
-def processImage(image):
-    image = histogramEqualizationAndColorSpace(image)
-    return image
-
-def processImages(images):
-    images = [processImage(image) for image in images]
-    return images
-
-def standardDateFormat():
-    return datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-
-def filename_append(path, suffix):
-    parts = path.split(".")
-    ext = parts[-1]
-    base = ".".join(parts[:-1])+suffix+'.'+ext
-    return base
-
-def change_ext(path, new_ext):
-    parts = path.split(".")
-    parts[-1] = new_ext
-    return ".".join(parts)
-
-
-
-
+    img = cv2.merge(channels,ycrcb)
+    img = cv2.cvtColor(img,cv2.COLOR_YCR_CB2RGB)
+    return img
