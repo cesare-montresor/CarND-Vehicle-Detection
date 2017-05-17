@@ -8,7 +8,7 @@ from shutil import copyfile
 import datetime
 import pickle
 import csv
-import pygame
+#import pygame
 
 
 ## IMAGE DISPLAY
@@ -193,7 +193,8 @@ def standardDatetime():
 
 
 ## play sounds
-
+'''
 def play(path):
     sound = pygame.mixer.Sound(path)
     sound.play()
+'''

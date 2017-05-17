@@ -1,67 +1,69 @@
 import dataset as ds
-from classifier import CarClassifier
 import utils
 import os
 import matplotlib.pyplot as plt
 import tracker as tk
+import model as md
+from keras.models import load_model
+from moviepy.editor import VideoFileClip
+import numpy as np
+from scipy.ndimage.measurements import label
+import classifier as cls
+import cv2
 
 classifiers_path = './classifiers/'
+video_output_path = './videos/'
 classifier_name = 'default.p'
 src_video = 'project_video.mp4'
 test_video = 'test_video.mp4'
 test_video2 = 'test_video2.mp4'
 
+train = True
+load_weights = None # 'models/cls_cnn_20170516-003449_01-0.04674.h5'
+
+
 dataset = "default"
 
+image_size=(1280,720)
 yrange=(400,680)
 
-ds.augmentNonVehicleDatasource(target_size=20000)
+xsize = image_size[0]
+ysize = yrange[1] - yrange[0]
 
-#need to find a viable method to deal with hummungus dataset (> 30gb)
-#ds.recordingsToDatasource_CrowdAI('object-detection-crowdai')
-#ds.recordingsToDatasource_Autti('object-dataset')
 
+
+
+ds.recordingsToDatasource_CrowdAI('object-detection-crowdai')
+ds.recordingsToDatasource_Autti('object-dataset')
+ds.augmentNonVehicleDatasource()  # target_size=None -> balance classes
 ds.datasourceToDataset(dataset)
 
-if not os.path.exists(classifiers_path + classifier_name):
-    cc = CarClassifier(yrange=yrange)
-
-    scaler = ds.computeFeaturesForDataset(dataset, cc)
-    cc.scaler = scaler
-
-    dataset = ds.loadDataset(dataset)
-    print(type(dataset))
-    for label in dataset:
-        print(label)
-
-    cc.trainSVC(dataset['features'], dataset['y'])
-    cc.save(classifiers_path + classifier_name)
-else:
-    cc = CarClassifier.load(classifiers_path + classifier_name)
+if train:
+    model_name = md.train(dataset, load_weights=load_weights, debug=False)
 
 
-trk = tk.Tracker()
-
-window_max = yrange[1]-yrange[0]
-window_min = 64
-windows_steps = 4
-threshold = 4
-
+model = md.classifierCNN([ysize, xsize, 3], load_weights=load_weights)
 
 live = False
-display = None
 
 def parseFrame(img):
-    global display
+    global display, yrange
+    img_tosearch = img[yrange[0]:yrange[1], :, :]
+    prediction = model.predict(img_tosearch[None, :, :, :], batch_size=1)
 
-    bboxes=cc.findCars(img, windows_range=(window_min,window_max), windows_steps=windows_steps, threshold=threshold, debug=not live)
-    detection_list = trk.processFrameDetections(bboxes)
-    detection_boxes = []
-    for detection in detection_list:
-        detection_boxes.append(detection.averagedBox())
+    print(prediction.shape)
+    heatmap = prediction[0,:,:,0]
+    print(heatmap.shape)
+    min_value, max_value = np.min(heatmap), np.max(heatmap)
+    print('Heatmap value range', min_value, max_value)
+
+    heatmap = cv2.resize(heatmap, (img_tosearch.shape[1],img_tosearch.shape[0]) )  #resize for better details?
+
+    bboxes = cls.extractBoxes(heatmap,threshold=0.5, yoffset=yrange[0], debug=True)
+
 
     img = utils.draw_boxes(img, bboxes, color=(255, 0, 0))
-    img = utils.draw_boxes(img, detection_boxes, color=(0,255,0))
+    #img = utils.draw_boxes(img, detection_boxes, color=(0,255,0))
 
     if live:
         plt.ion()
@@ -78,9 +80,17 @@ def parseFrame(img):
     return img
 
 
-#cc.processVideo(test_video2,parseFrame)
-cc.processVideo(test_video,parseFrame)
-#cc.processVideo(src_video,parseFrame)
+def processVideo(path, processFrame, live=False, debug=False):
+    strdate = '_' + utils.standardDatetime()
+    output_video = video_output_path + utils.filenameAppend(path, strdate)
+    video = VideoFileClip(path)
+    video_clip = video.fl_image(processFrame)
+    video_clip.write_videofile(output_video, audio=False)
+
+
+#processVideo(test_video2,parseFrame)
+processVideo(test_video,parseFrame)
+#processVideo(src_video,parseFrame)
 
 
 

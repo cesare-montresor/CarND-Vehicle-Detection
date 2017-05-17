@@ -13,45 +13,170 @@ from moviepy.editor import VideoFileClip
 import csv
 
 csvname = 'labels.csv'
-datasetfile = 'dataset.npz'
+
+trainfile = 'train.npz'
+validfile = 'valid.npz'
+testfile = 'test.npz'
+
 datasources_path = './datasources/'
 recordings_path = './recordings/'
 datasets_path = './datasets/'
 video_output_path = './videos/'
+default_batch_size = 32
 
-def augmentNonVehicleDatasource(target_size, force=False):
+
+def loadDatasetGenerators(name, batch_size=default_batch_size):  # return generator
+    basepath = datasets_path + name + '/'
+    train_dataset = loadDataset(basepath + trainfile)
+    valid_dataset = loadDataset(basepath + validfile)
+
+    train_size = len(train_dataset['path'])
+    valid_size = len(valid_dataset['path'])
+    # print(train_dataset.keys())
+
+    sample = utils.loadImage(train_dataset['path'][0])
+    sample_shape = sample.shape
+    sample_type = type(sample[0][0][0])
+
+    info = {
+        'n_train':train_size,
+        'n_train_batch': math.ceil(train_size/batch_size),
+        'n_valid':valid_size,
+        'n_valid_batch': math.ceil(valid_size/batch_size),
+        'input_shape': sample_shape,
+        'data_type': sample_type
+    }
+
+    return datasetGenerator(train_dataset, batch_size), datasetGenerator(valid_dataset, batch_size), info
+
+def datasetGenerator(dataset, batch_size=default_batch_size):
+    n_dataset = len(dataset)
+    paths = dataset['path']
+    labels = dataset['y']
+
+    while 1:
+        paths, labels = shuffle(paths, labels)
+        for offset in range(0, n_dataset, batch_size):
+            batch_paths = paths[offset:offset + batch_size]
+            batch_labels = labels[offset:offset + batch_size]
+            X = []
+            y = []
+            for path,label in zip(batch_paths, batch_labels):
+                img = utils.loadImage(path)
+                aug_img = augmentImage(img)
+
+                X.append(aug_img)
+                y.append([[[label]]])  # output convolution layer is of shape (?,1,1,1), matching same shape
+
+            X = np.array(X)
+            y = np.array(y)
+            yield shuffle(X,y)
+
+
+
+def datasourceToDataset(name=None, valid_split=0.2, test_split=0.2, reindex_only=False, force=False):
+    if name is None: name = 'dataset_'+utils.standardDatetime()
+    basepath = datasets_path + name + '/'
+    basepath_img = basepath + 'img/'
+
+    if os.path.exists(basepath+trainfile) and not force and not reindex_only:
+        return basepath
+
+
+    vehicles_search_path = datasources_path + 'vehicles/*/*.png'
+    nonvehicles_search_path = datasources_path + 'non-vehicles/*/*.png'
+    print(vehicles_search_path,nonvehicles_search_path)
+
+    vehicles_paths = glob.glob(vehicles_search_path)
+    nonvehicles_paths = glob.glob(nonvehicles_search_path)
+    print('vehicles_paths', len(vehicles_paths))
+    print('nonvehicles_paths', len(nonvehicles_paths))
+
+    paths = []
+    labels = []
+    for img_path in vehicles_paths:
+        parts = img_path.split('/')
+        filename = "_".join(parts[-2:])
+        fullpath = basepath_img + filename
+        if not reindex_only:
+            utils.copy(img_path, fullpath)
+        paths.append(fullpath)
+        labels.append(1)
+
+    for img_path in nonvehicles_paths:
+        parts = img_path.split('/')
+        filename = "_".join(parts[-2:])
+        fullpath = basepath_img + filename
+        if not reindex_only:
+            utils.copy(img_path, fullpath)
+        paths.append(fullpath)
+        labels.append(0)
+
+    train_paths, test_paths,  train_labels, test_labels  = train_test_split(paths,       labels,       test_size=test_split)
+    train_paths, valid_paths, train_labels, valid_labels = train_test_split(train_paths, train_labels, test_size=valid_split)
+
+    train_dataset = {'path': train_paths, 'y': train_labels}
+    valid_dataset = {'path': valid_paths, 'y': valid_labels}
+    test_dataset  = {'path': test_paths,  'y': test_labels}
+
+    saveDataset(basepath + trainfile, train_dataset)
+    saveDataset(basepath + validfile, valid_dataset)
+    saveDataset(basepath + testfile,  test_dataset)
+
+    return basepath
+
+
+
+def augmentNonVehicleDatasource(target_size=None, force=False):
+    vehicles_path = datasources_path + 'vehicles/*/*.png'
     src_nonvehicles_path = datasources_path + 'non-vehicles/*/*.png'
     dst_nonvehicles_path = datasources_path + 'non-vehicles/augmented/'
 
-    aug_functions = [randomHue,randomBrightness,randomShadows]
     utils.makedirs(dst_nonvehicles_path)
-    if len(glob.glob(dst_nonvehicles_path+'*.png')) > 0 and not force:
+
+    vehicles_img_paths = glob.glob(vehicles_path)
+    nonvehicles_img_paths = glob.glob(src_nonvehicles_path)
+    augmented_img_paths = glob.glob(dst_nonvehicles_path)
+
+
+    if force:
+        for path in augmented_img_paths:
+            os.remove(path)
+        augmented_img_paths = []
+
+    if target_size is None:
+        target_size = len(vehicles_img_paths)-(len(nonvehicles_img_paths) + len(augmented_img_paths))
+    print('target size:', target_size)
+
+    if target_size <= 0:
+        print("Augmenting non-vehicle datasource:", "[SKIP]")
         return 0
+
 
     last_progress = 0
     items_cnt = 0
 
     src_paths = shuffle(glob.glob(src_nonvehicles_path))
-    aug_per_img = math.ceil(target_size / len(src_paths))
+    aug_per_img = int(math.ceil(target_size / len(src_paths)))
     for img_path in src_paths:
+        if items_cnt > target_size:
+            break
         filename = utils.filename(img_path)
         img = utils.loadImage(img_path)
         for i in range(aug_per_img):
-            action_num = np.random.randint(1, len(aug_functions))
-            action = aug_functions[action_num]
-            aug_img = action(img)
-
+            aug_img = augmentImage(img)
             aug_img_path = dst_nonvehicles_path + utils.filenameAppend(filename,'_'+str(i))
             utils.saveImage(aug_img_path,aug_img, cspace=cv2.COLOR_RGB2BGR)
 
             items_cnt += 1
             progress = int((items_cnt * 100) / target_size)
             if progress > last_progress:
-                print('Augmenting non-vehicle datasource', progress, '%')
+                print('Augmenting non-vehicle datasource:', progress, '%')
                 last_progress = progress
+            if items_cnt > target_size:
+                break
 
-        if items_cnt > target_size:
-            break
+
 
 
 
@@ -141,51 +266,6 @@ def recordingsToDatasource(name, key_frame, key_topleft, key_bottomright, key_fi
     return dst_basepath, items_cnt
 
 
-
-def datasourceToDataset(name=None, reindex_only=False, force=False):
-    if name is None: name = 'dataset_'+utils.standardDatetime()
-    basepath = datasets_path + name + '/'
-    basepath_img = basepath+ 'img/'
-
-    if os.path.exists(basepath+datasetfile) and not force and not reindex_only:
-        return basepath,0
-
-
-    vehicles_search_path = datasources_path + 'vehicles/*/*.png'
-    nonvehicles_search_path = datasources_path + 'non-vehicles/*/*.png'
-    print(vehicles_search_path,nonvehicles_search_path)
-
-    vehicles_paths = glob.glob(vehicles_search_path)
-    nonvehicles_paths = glob.glob(nonvehicles_search_path)
-    print('vehicles_paths', len(vehicles_paths))
-    print('nonvehicles_paths', len(nonvehicles_paths))
-
-    paths = []
-    labels = []
-    for img_path in vehicles_paths:
-        parts = img_path.split('/')
-        filename = "_".join(parts[-2:])
-        fullpath = basepath_img + filename
-        if not reindex_only:
-            utils.copy(img_path, fullpath)
-        paths.append(fullpath)
-        labels.append(1)
-
-    for img_path in nonvehicles_paths:
-        parts = img_path.split('/')
-        filename = "_".join(parts[-2:])
-        fullpath = basepath_img + filename
-        if not reindex_only:
-            utils.copy(img_path, fullpath)
-        paths.append(fullpath)
-        labels.append(0)
-    dataset_cnt = len(paths)
-    dataset = {'path': paths, 'y': labels}
-
-    saveDataset(name,dataset)
-
-    return basepath, dataset_cnt
-
 def computeFeaturesForDataset(name, classifier, debug=False, force=False):
     dataset = loadDataset(name)
 
@@ -203,14 +283,14 @@ def computeFeaturesForDataset(name, classifier, debug=False, force=False):
 
     return scaler
 
-def saveDataset(name, data):
-    path = datasets_path + name + '/' + datasetfile
+
+
+def saveDataset(path, data):
     np.savez(path, **data)
 
 
-def loadDataset(name):
+def loadDataset(path):
     dataset = None
-    path = datasets_path + name + '/' + datasetfile
     with np.load(path) as npzfile:
         dataset = {}
         for key in npzfile.keys():
@@ -249,6 +329,12 @@ def processVideo(self, path, function, live=False, debug=False):
 
 # augmenting
 
+def augmentImage(img):
+    action_list = [randomHue, randomBrightness, randomRotation, randomShadows]
+    action_num = np.random.randint(0, len(action_list))
+    action = action_list[action_num]
+    aug_img = action(img)
+    return aug_img
 
 def randomBrightness(img, limit=0.4):
     img_new = cv2.cvtColor(img,cv2.COLOR_RGB2HSV)
@@ -259,11 +345,11 @@ def randomBrightness(img, limit=0.4):
     img_new = cv2.cvtColor(img_new,cv2.COLOR_HSV2RGB)
     return img_new
 
-def randomHue(img, limit=0.4):
+def randomHue(img):
+    hue = np.random.randint(low=0, high=255)
     img_new = cv2.cvtColor(img,cv2.COLOR_RGB2HSV)
     img_new = np.array(img_new, dtype = np.float64)
-    img_new[:,:,2] = img_new[:,:,0] * (np.random.uniform(low=limit, high=2-limit))
-    img_new[:,:,2][img_new[:,:,0]>255] %= 255
+    img_new[:,:,0] = (img_new[:,:,0] + hue ) % 255
     img_new = np.array(img_new, dtype = np.uint8)
     img_new = cv2.cvtColor(img_new,cv2.COLOR_HSV2RGB)
     return img_new
