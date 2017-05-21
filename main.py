@@ -16,54 +16,70 @@ video_output_path = './videos/'
 classifier_name = 'default.p'
 src_video = 'project_video.mp4'
 test_video = 'test_video.mp4'
-test_video2 = 'test_video2.mp4'
 
-train = True
-load_weights = None # 'models/cls_cnn_20170516-003449_01-0.04674.h5'
+train = False
+train_weights = None # './models/cls_cnn_20170518-220630_05-0.01172-0.98876.h5'
+predict_weights = "./models/cls_cnn_20170519-120820_03-0.01811-0.98367.h5"
 
 
 dataset = "default"
 
 image_size=(1280,720)
-yrange=(400,680)
+yrange=(390,680)
 
 xsize = image_size[0]
 ysize = yrange[1] - yrange[0]
 
 
+#ds.recordingsToDatasource_CrowdAI('object-detection-crowdai')
+#ds.recordingsToDatasource_Autti('object-dataset')
+#ds.augmentNonVehicleDatasource()  # target_size=None -> balance classes
 
-
-ds.recordingsToDatasource_CrowdAI('object-detection-crowdai')
-ds.recordingsToDatasource_Autti('object-dataset')
-ds.augmentNonVehicleDatasource()  # target_size=None -> balance classes
+ds.addFlippedToDatasoruce()
 ds.datasourceToDataset(dataset)
 
 if train:
-    model_name = md.train(dataset, load_weights=load_weights, debug=False)
+    model_name = md.train(dataset, load_weights=train_weights, debug=False)
 
 
-model = md.classifierCNN([ysize, xsize, 3], load_weights=load_weights)
+model = md.classifierCNN([ysize, xsize, 3], load_weights=predict_weights)
 
-live = False
+live = True
+display = None
+include_pip = False #picture in picture for prediction and heatmap, make debug so much easier
+pip_margin = 20
+
+traker = tk.Tracker()
 
 def parseFrame(img):
     global display, yrange
+    valid_boxes = []
     img_tosearch = img[yrange[0]:yrange[1], :, :]
+
     prediction = model.predict(img_tosearch[None, :, :, :], batch_size=1)
+    prediction_map = prediction[0, :, :, 0]  # extract 2D prediction map
+    prediction_map = cv2.GaussianBlur(prediction_map, (3, 3), 0) #smooth the area of prediction, much cheaper than resizing the image with bicubic
 
-    print(prediction.shape)
-    heatmap = prediction[0,:,:,0]
-    print(heatmap.shape)
-    min_value, max_value = np.min(heatmap), np.max(heatmap)
-    print('Heatmap value range', min_value, max_value)
+    heatmap = cls.predictionToHeatmap(img_tosearch, prediction_map, threshold=0.7, debug=False)
 
-    heatmap = cv2.resize(heatmap, (img_tosearch.shape[1],img_tosearch.shape[0]) )  #resize for better details?
+    bboxes, heatmap = cls.heatmapToBoxes(heatmap, yoffset=yrange[0], debug=False) # return cleanup version
+    detections = traker.processFrameDetections(img_tosearch, bboxes)
+    for detection in detections:
+        valid_boxes.append(detection.averagedBox())
 
-    bboxes = cls.extractBoxes(heatmap,threshold=0.5, yoffset=yrange[0], debug=True)
+    #img = utils.draw_boxes(img, bboxes, color=(255, 0, 0))
+    img = utils.draw_boxes(img, valid_boxes, color=(0,255,0))
 
 
-    img = utils.draw_boxes(img, bboxes, color=(255, 0, 0))
-    #img = utils.draw_boxes(img, detection_boxes, color=(0,255,0))
+    if include_pip:
+        img_h,img_w = img.shape[:2]
+        pip_h,pip_w = prediction_map.shape[:2]
+        pip_h, pip_w = pip_h*4,pip_w*4
+        prediction_pip = cv2.resize(cv2.cvtColor(np.uint8(prediction_map*255), cv2.COLOR_GRAY2RGB), (pip_w,pip_h) )
+        heatmap_pip = cv2.resize(cv2.cvtColor(np.uint8((heatmap/np.max(heatmap))*255), cv2.COLOR_GRAY2RGB), (pip_w,pip_h) )
+
+        img[pip_margin:pip_h + pip_margin, pip_margin:pip_w + pip_margin, :] = prediction_pip
+        img[pip_margin:pip_h + pip_margin, img_w-(pip_margin+pip_w):img_w-pip_margin, :] = heatmap_pip
 
     if live:
         plt.ion()
@@ -88,9 +104,7 @@ def processVideo(path, processFrame, live=False, debug=False):
     video_clip.write_videofile(output_video, audio=False)
 
 
-#processVideo(test_video2,parseFrame)
-processVideo(test_video,parseFrame)
-#processVideo(src_video,parseFrame)
+processVideo(src_video,parseFrame)
 
 
 

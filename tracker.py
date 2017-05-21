@@ -6,15 +6,15 @@ class Tracker():
         self.current_frame = 0
         self.detections = []
         self.detections_purged = []
-        self.min_detection_valid = 15
-        self.min_detection_purge = 10
-        self.min_area_matching = 0.6  # 70%
-        self.min_area_deduplicate = 0.8  # 90%
+        self.min_detection_valid = 10  # fps 25 = 1 sec
+        self.min_detection_purge = 5  # fps 25 = 1 sec
+        self.presence_ratio_purge = 0.7
+        self.min_area_matching = 0.6
         self.opposite_lane_polygon = Polygon(((0, 600), (600, 400), (600, 0), (0, 0)))
-        self.very_close_polygon = Polygon(((300, 550), (1100, 550), (1100, 720), (300, 720)))
+
 
     # assume that is called once per frame, only
-    def processFrameDetections(self, bboxes):
+    def processFrameDetections(self, frame, bboxes):
         matches = []
         new_detections = []
         for bbox in bboxes:
@@ -27,7 +27,7 @@ class Tracker():
                 match = Detection()
                 new_detections.append(match)
 
-            match.detected(self.current_frame, position)
+            match.detected(self.current_frame, frame, position)
 
         self.current_frame += 1
         self.detections.extend(new_detections)
@@ -38,61 +38,25 @@ class Tracker():
             if detection.counter >= self.min_detection_valid:
                 matches.append(detection)
 
-        to_hide=[]
-        # remove double detections
-        for detection1 in matches:
-            for detection2 in matches:
-                if detection1 != detection2:
-                    pos1 = detection1.averagedPosition()
-                    pos2 = detection2.averagedPosition()
-                    if pos1.contains(pos2):
-                        detection1.detected(self.current_frame, position)
-                        detection2.detected(self.current_frame, position)
-                        # print('purge because contained')
-                        to_hide.append(detection2)
-                    else:
-                        if pos1.intersection(
-                                pos2).area > pos2.area * self.min_area_deduplicate:  # if it overlaps by xx% of the smaller one
-                            # print('purge because overlaps')
-                            detection1.detected(self.current_frame, position)
-                            detection2.detected(self.current_frame, position)
-                            to_hide.append(detection2)
-
-        for detection in to_hide:
-            if detection in matches:
-                matches.remove(detection)
-
         return matches
 
     def isValidPosition(self,position): #filter by shape, size taking into account prospective
-        ratio_factor = 3
-        ratio_limit = (1/ratio_factor,ratio_factor) # 1/4
+        ratio_factor = 4
+        ratio_limit = (1/ratio_factor,ratio_factor)
         min_size = 20
-        max_size = 400
-        min_size_close_objects = 100
 
         xmin,ymin,xmax,ymax = position.bounds
         center = position.centroid
-        area = position.area
         w,h = xmax-xmin, ymax-ymin
+
 
         # filter opposite lane
         if self.opposite_lane_polygon.contains(center):
             print("opposite lane", w, h)
             return False
 
-        # is right in front of the car
-        if self.very_close_polygon.contains(center):
-            if w < min_size_close_objects or h < min_size_close_objects:
-                print("too small for being so close", w, h)
-                return False
-
         if w < min_size or h < min_size: #too small
             print("too small, size", w,h)
-            return False
-
-        if w > max_size or h > max_size: #too big
-            print("too big, size", w, h)
             return False
 
         ratio = w/h
@@ -100,18 +64,16 @@ class Tracker():
             print("drop wrong shape", ratio)
             return False
 
-
-
-
-
         return True
 
     def purge(self):
         to_purge = []
         for detection in self.detections:
-            if self.current_frame - detection.last_apperence > self.min_detection_purge:
-                to_purge.append(detection)
+            missing_since = self.current_frame - detection.last_apperence
+            presence_ratio = detection.counter / missing_since
 
+            if missing_since > self.min_detection_purge and presence_ratio > self.presence_ratio_purge:
+                to_purge.append(detection)
 
         for detection in to_purge:
             if detection in self.detections:
@@ -154,7 +116,7 @@ class Detection():
         self.best_position = None
 
 
-    def detected(self,frame_num, position):
+    def detected(self,frame_num, frame, position):
         if self.first_apperence is None:
             self.first_apperence = frame_num
 
@@ -173,7 +135,7 @@ class Detection():
         return bboxToPosition(bbox)
 
 
-    def averagedBox(self, lastN=10):
+    def averagedBox(self, lastN=20):
         avg_bounds = None
         lastN_positions = self.position_history[:lastN]
         for position in reversed(lastN_positions):

@@ -47,9 +47,9 @@ def loadDatasetGenerators(name, batch_size=default_batch_size):  # return genera
         'data_type': sample_type
     }
 
-    return datasetGenerator(train_dataset, batch_size), datasetGenerator(valid_dataset, batch_size), info
+    return datasetGenerator(train_dataset, batch_size, augment=False), datasetGenerator(valid_dataset, batch_size), info
 
-def datasetGenerator(dataset, batch_size=default_batch_size):
+def datasetGenerator(dataset, batch_size=default_batch_size, augment=False):
     n_dataset = len(dataset)
     paths = dataset['path']
     labels = dataset['y']
@@ -63,9 +63,10 @@ def datasetGenerator(dataset, batch_size=default_batch_size):
             y = []
             for path,label in zip(batch_paths, batch_labels):
                 img = utils.loadImage(path)
-                aug_img = augmentImage(img)
+                if augment:
+                    img = augmentImage(img)
 
-                X.append(aug_img)
+                X.append(img)
                 y.append([[[label]]])  # output convolution layer is of shape (?,1,1,1), matching same shape
 
             X = np.array(X)
@@ -125,6 +126,41 @@ def datasourceToDataset(name=None, valid_split=0.2, test_split=0.2, reindex_only
 
     return basepath
 
+def addFlippedToDatasoruce(force=False):
+    src_vehicles_path = datasources_path + 'vehicles/*/*.png'
+    src_nonvehicles_path = datasources_path + 'non-vehicles/*/*.png'
+
+    dst_vehicles_path = datasources_path + 'vehicles/flipped/'
+    dst_nonvehicles_path = datasources_path + 'non-vehicles/flipped/'
+    if not force and os.path.exists(dst_vehicles_path) and os.path.exists(dst_nonvehicles_path):
+        return
+
+    utils.makedirs(dst_nonvehicles_path)
+    utils.makedirs(dst_vehicles_path)
+
+    dst_vehicles_paths = glob.glob(dst_vehicles_path + '*.png')
+    dst_nonvehicles_paths = glob.glob(dst_nonvehicles_path + '*.png')
+
+    cleanup_paths = np.concatenate((dst_vehicles_paths,dst_nonvehicles_paths))
+    [os.remove(path) for path in cleanup_paths]
+
+    src_vehicles_paths = glob.glob(src_vehicles_path)
+    src_nonvehicles_paths = glob.glob(src_nonvehicles_path)
+
+    for i,img_path in enumerate(src_vehicles_paths):
+        filename = utils.filename(img_path)
+        filename = utils.filenameAppend(filename,'_'+str(i))
+        print(img_path,filename)
+        img = utils.loadImage(img_path)
+        img = cv2.flip(img,1)
+        utils.saveImage(dst_vehicles_path + filename, img)
+
+    for i,img_path in enumerate(src_nonvehicles_paths):
+        filename = utils.filename(img_path)
+        filename = utils.filenameAppend(filename,'_'+str(i))
+        img = utils.loadImage(img_path)
+        img = cv2.flip(img,1)
+        utils.saveImage(dst_nonvehicles_path + filename, img)
 
 
 def augmentNonVehicleDatasource(target_size=None, force=False):
@@ -330,7 +366,7 @@ def processVideo(self, path, function, live=False, debug=False):
 # augmenting
 
 def augmentImage(img):
-    action_list = [randomHue, randomBrightness, randomRotation, randomShadows]
+    action_list = [randomHue, randomBrightness, randomNothing, randomShadows] # randomRotation
     action_num = np.random.randint(0, len(action_list))
     action = action_list[action_num]
     aug_img = action(img)
@@ -378,11 +414,5 @@ def randomShadows(img, max_shadows = 3, min_aplha=0.1, max_aplha=0.8, min_size=0
         img_new[top:bottom, left:right, :] = img_new[top:bottom, left:right, :] * np.random.uniform(min_aplha,max_aplha)
     return img_new
 
-
-def histogramEqualization(image):
-    ycrcb=cv2.cvtColor(image,cv2.COLOR_RGB2YCR_CB)
-    channels=cv2.split(ycrcb)
-    cv2.equalizeHist(channels[0],channels[0])
-    img = cv2.merge(channels,ycrcb)
-    img = cv2.cvtColor(img,cv2.COLOR_YCR_CB2RGB)
+def randomNothing(img):
     return img
