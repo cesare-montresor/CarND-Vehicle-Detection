@@ -14,15 +14,14 @@ def classifierCNN(input_shape, name='cls_cnn', load_weights=None, debug=False):
 
     model = Sequential(name=name)
     model.add(Lambda(lambda x: x/255, input_shape=input_shape))  # normalize
-    model.add(Conv2D(filters=16, kernel_size=(3, 3), activation='relu', name='conv_0', padding="same"))
+    model.add(Conv2D(filters=16, kernel_size=(3, 3), activation='relu', name='conv_0', padding='same'))
     model.add(Dropout(0.5))
-    model.add(Conv2D(filters=32, kernel_size=(3, 3), activation='relu', name='conv_1', padding="same"))
+    model.add(Conv2D(filters=32, kernel_size=(3, 3), activation='relu', name='conv_1', padding='same'))
     model.add(Dropout(0.5))
-    model.add(Conv2D(filters=64, kernel_size=(3, 3), activation='relu', name='conv_2', padding="same"))
+    model.add(Conv2D(filters=64, kernel_size=(3, 3), activation='relu', name='conv_2', padding='same'))
     model.add(MaxPool2D(pool_size=(8, 8)))
     model.add(Dropout(0.5))
-    # binary 'classifier'
-    model.add(Conv2D(filters=1, kernel_size=(8, 8), activation="sigmoid", name='classifier'))
+    model.add(Conv2D(filters=1, kernel_size=(8, 8), activation="sigmoid", name='classifier'))    # binary 'classifier'
 
     if load_weights is not None:
         print('Loading weights', load_weights)
@@ -37,7 +36,7 @@ def classifierCNN(input_shape, name='cls_cnn', load_weights=None, debug=False):
 
     return model
 
-def train(dataset, epochs=30, batch_size=32, load_weights=None, debug=False):
+def train(dataset, epochs=30, batch_size=64, load_weights=None, debug=False):
     timestamp = utils.standardDatetime()
     # load dataset generator and metrics
     gen_train, gen_valid, info = ds.loadDatasetGenerators(dataset, batch_size=batch_size)

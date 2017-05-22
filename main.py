@@ -39,12 +39,12 @@ ds.addFlippedToDatasoruce()
 ds.datasourceToDataset(dataset)
 
 if train:
-    model_name = md.train(dataset, load_weights=train_weights, debug=False)
+    model_name = md.train(dataset, load_weights=train_weights, debug=True)
 
 
 model = md.classifierCNN([ysize, xsize, 3], load_weights=predict_weights, debug=True)
 
-live = False
+live = True
 display = None
 include_pip = True #picture in picture for prediction and heatmap, make debug so much easier
 pip_margin = 20
@@ -59,6 +59,7 @@ def parseFrame(img):
     prediction = model.predict(img_tosearch[None, :, :, :], batch_size=1)
     prediction_map = prediction[0, :, :, 0]  # extract 2D prediction map
     prediction_map = cv2.GaussianBlur(prediction_map, (3, 3), 0) #smooth the area of prediction, much cheaper than resizing the image with bicubic
+    print(prediction_map.shape)
     # utils.showImage(prediction_map,cmap='hot')
 
     heatmap = cls.predictionToHeatmap(img_tosearch, prediction_map, threshold=0.7, debug=False)
