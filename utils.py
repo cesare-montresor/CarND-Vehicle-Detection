@@ -3,12 +3,10 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import math
-from mpl_toolkits.mplot3d import Axes3D
 from shutil import copyfile
 import datetime
 import pickle
 import csv
-#import pygame
 
 
 ## IMAGE DISPLAY

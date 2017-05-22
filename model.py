@@ -2,7 +2,6 @@ from keras.models import Sequential
 from keras.layers import Lambda, Conv2D, Dropout, MaxPool2D
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.utils import plot_model
-import os
 import dataset as ds
 import utils
 import matplotlib.pyplot as plt
@@ -11,7 +10,7 @@ models_path = './models/'
 output_images = './output_images/'
 
 
-def classifierCNN(input_shape, name='cls_cnn', load_weights=None):
+def classifierCNN(input_shape, name='cls_cnn', load_weights=None, debug=False):
 
     model = Sequential(name=name)
     model.add(Lambda(lambda x: x/255, input_shape=input_shape))  # normalize
@@ -31,6 +30,11 @@ def classifierCNN(input_shape, name='cls_cnn', load_weights=None):
     else:
         print('Loading weights failed', load_weights)
 
+    if debug:
+        model_img_path = output_images + model.name + '.png'
+        plot_model(model, to_file=model_img_path, show_shapes=True)
+        utils.showImage(model_img_path)
+
     return model
 
 def train(dataset, epochs=30, batch_size=32, load_weights=None, debug=False):
@@ -40,12 +44,7 @@ def train(dataset, epochs=30, batch_size=32, load_weights=None, debug=False):
     print(info)
 
     # create the model a eventually preload the weights (set to None or remove to disable)
-    model = classifierCNN(input_shape=info['input_shape'], load_weights=load_weights)
-    if debug:
-        model_img_path = output_images + model.name + '.png'
-        plot_model(model, to_file=model_img_path, show_shapes=True)
-        utils.showImage(model_img_path)
-
+    model = classifierCNN(input_shape=info['input_shape'], load_weights=load_weights, debug=debug)
     model_name = model.name +'_'+ timestamp
 
     # Intermediate model filename template

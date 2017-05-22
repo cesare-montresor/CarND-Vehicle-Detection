@@ -1,16 +1,12 @@
 import glob, math
 import numpy as np
-import h5py, pickle
-import datetime
 import utils
 from sklearn.utils import shuffle
 import cv2
 import os
-import features as ft
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from moviepy.editor import VideoFileClip
-import csv
 
 csvname = 'labels.csv'
 

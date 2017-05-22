@@ -1,8 +1,6 @@
 import numpy as np
 import utils
-from moviepy.editor import VideoFileClip
 from scipy.ndimage.measurements import label
-import cv2
 
 video_output_path = './videos/'
 window_size = (64,64)
@@ -15,28 +13,25 @@ def predictionToHeatmap(img, prediction_map, threshold=0.8, debug=False):
 
     if debug: utils.showImage(prediction_map, cmap='hot')
     prediction_map[prediction_map < threshold] = 0
-    if debug: utils.showImage(prediction_map, cmap='hot')
-    heatmap_regions, cnt_regions = label(prediction_map)
 
-    for region_number in range(1, cnt_regions + 1):
-        nonzero = (heatmap_regions == region_number).nonzero()
-        for x,y in zip(nonzero[1],nonzero[0]):
-            value = prediction_map[y][x]
-            #print(x, y, value)
+    nonzero = (prediction_map).nonzero()
+    for x,y in zip(nonzero[1],nonzero[0]):
+        value = prediction_map[y][x]
+        #print(x, y, value)
 
-            sx = x * xscale
-            sy = y * yscale
-            wx = window_size[1] / 2
-            wy = window_size[0] / 2
-            minx, miny, maxx, maxy = int(sx-wx), int(sy-wy), int(sx+wx), int(sy+wy)
+        sx = x * xscale
+        sy = y * yscale
+        wx = window_size[1] / 2
+        wy = window_size[0] / 2
+        minx, miny, maxx, maxy = int(sx-wx), int(sy-wy), int(sx+wx), int(sy+wy)
 
-            minx = np.clip(minx, 0, w)
-            miny = np.clip(miny, 0, h)
-            maxx = np.clip(maxx, 0, w)
-            maxy = np.clip(maxy, 0, h)
+        minx = np.clip(minx, 0, w)
+        miny = np.clip(miny, 0, h)
+        maxx = np.clip(maxx, 0, w)
+        maxy = np.clip(maxy, 0, h)
 
-            #print(miny,maxy,minx,maxx)
-            heatmap[miny:maxy, minx:maxx] += 1 #value
+        #print(miny,maxy,minx,maxx)
+        heatmap[miny:maxy, minx:maxx] += 1 #value
 
 
     if debug: utils.showImage(heatmap, cmap='hot')

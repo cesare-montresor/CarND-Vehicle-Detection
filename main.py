@@ -42,11 +42,11 @@ if train:
     model_name = md.train(dataset, load_weights=train_weights, debug=False)
 
 
-model = md.classifierCNN([ysize, xsize, 3], load_weights=predict_weights)
+model = md.classifierCNN([ysize, xsize, 3], load_weights=predict_weights, debug=True)
 
-live = True
+live = False
 display = None
-include_pip = False #picture in picture for prediction and heatmap, make debug so much easier
+include_pip = True #picture in picture for prediction and heatmap, make debug so much easier
 pip_margin = 20
 
 traker = tk.Tracker()
@@ -59,6 +59,7 @@ def parseFrame(img):
     prediction = model.predict(img_tosearch[None, :, :, :], batch_size=1)
     prediction_map = prediction[0, :, :, 0]  # extract 2D prediction map
     prediction_map = cv2.GaussianBlur(prediction_map, (3, 3), 0) #smooth the area of prediction, much cheaper than resizing the image with bicubic
+    # utils.showImage(prediction_map,cmap='hot')
 
     heatmap = cls.predictionToHeatmap(img_tosearch, prediction_map, threshold=0.7, debug=False)
 
@@ -67,7 +68,7 @@ def parseFrame(img):
     for detection in detections:
         valid_boxes.append(detection.averagedBox())
 
-    #img = utils.draw_boxes(img, bboxes, color=(255, 0, 0))
+    img = utils.draw_boxes(img, bboxes, color=(255, 0, 0))
     img = utils.draw_boxes(img, valid_boxes, color=(0,255,0))
 
 
