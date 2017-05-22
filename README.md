@@ -1,9 +1,3 @@
-##Writeup Template
-###You can use this file as a template for your writeup if you want to submit it as a markdown file, but feel free to use some other method and submit a pdf if you prefer.
-
----
-
-
 [//]: # (Image References)
 [pos_neg]: ./output_images/pos_neg.png
 [cls_cnn_infer]: ./output_images/cls_cnn_infer.png
@@ -76,22 +70,22 @@ _I apologies if the current solution still contains small traces of the SVM code
   Video output folder, final prodcut of the pipeline.
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/513/view) Points
-###Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
+### Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
 
 ---
-###Writeup / README
+### Writeup / README
 
-####1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Vehicle-Detection/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
+#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Vehicle-Detection/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
 
 You're reading it!
 
-###Histogram of Oriented Gradients (HOG)
+### Histogram of Oriented Gradients (HOG)
 
 In my finial implementation, as I explained in the introduction I decided not to use an SVM classifier due to is several limitation. 
 However, there are many analogy between a HOG and the first layer of ConvNet, in fact, by looking at the filter learned we will find oriented edges, the main difference is that where HOG computes the blindly, the convnet learn only the meaningful ones at training time.   
 Further more, the ConvNet has also the ability to aggregate information coming from multiple color channels at once.  
 
-###Sliding Window Search
+### Sliding Window Search
 
 As mention in the introduction, using a ConvNet as described above, give us a sliding window mechanism almost for free as it comes in the form of a convolution, is extremely fast to compute and produce a quite dense output.  
 The equivalent number of "sliding windows" can be easily obtained by looking at the size of the prediction map (29x153), every element of the last layer of the CNN is equivalent to a window.  
@@ -119,11 +113,11 @@ For the categories above also equal examples of cars of different colors and of 
 
 ### Video Implementation
 
-####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
+#### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
 Here's a [link to my video result](./project_video_final.mp4)
 
 
-####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
+#### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
 As mention in the introduction I used the prediction map outputted by the CNN as starting point.  
 Compared to the result obtained with the SVM turn out to be much more dense, clean, precise and polarized, however is still not immune from false positive and missing detections.  
@@ -170,9 +164,9 @@ _(I like this last one particularly because it show how much my NN likes little 
 
 ---
 
-###Discussion
+### Discussion
 
-####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+#### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
 Starting from the the first implementation, using SVM, I found staggering the amount of parameters (and the combination of them) that I needed to try to just be able to extract features,
 this mixed with the long time of processing of the video and the random appearance of false positive and false negative randomly along the frames that was forcing me to test every change on most of the video to make sure I didn't break something while trying to fix something else, I must say have been a quite frustrating experience.
