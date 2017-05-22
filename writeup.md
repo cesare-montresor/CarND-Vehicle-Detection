@@ -45,6 +45,13 @@ While all the approaches listed above works quite well, however, formally speaki
 
 _I apologies if the current solution still contains small traces of the SVM code, but right now I don't have time for further refactoring, I hope the code is clean enough._
 
+Model at train
+![cls_cnn_train]
+
+Model at prediction
+![cls_cnn_infer]
+
+
 ### Project structure
 
 - **main.py**  
